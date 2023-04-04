@@ -5,7 +5,7 @@ Synopsys PrimeTime, whichis a signoff tool for power and delay analysis.
 
  read lib -Standarzellen
  
- parsing
+ parsing von werten im lib format
  
  quantencomputing und james webb teleskop
  
@@ -17,10 +17,15 @@ Set Up :
 -fiction!!
 -ABC!!
 -Repos from CDA Organization
+-maybe zsh shell
 
 ToDo:
--ortho Code updaten
+
+
 -Relevante Paper aus Cryo Paper nachlesen
+
+-ortho Code updaten
+
 -ABC Befehle ausprobieren
 -ABC Code anschauen
 -lib/readlib Dateien anschauen
