@@ -1,0 +1,5 @@
+Morning:
+- add zsh shell
+- fix some git issues with some repos
+rest of the day:
+- check out bookmarks in abc and understand the basic code needed for read_lib and map

@@ -1,0 +1,54 @@
+Synopsys PrimeTime, whichis a signoff tool for power and delay analysis.
+1. Brauche ich Synopsis?
+2. Weiß man schon ohne technology mapping bei z.B. rewriting, welcher graph weniger power verbraucht?
+3. resyn2 script used within the algorithm for power optimization?
+4. Hat jeder Algorithmus eine eigene Kostenfuntion integriert oder greift ABC auf eine Kostenfunktion zurück
+5. resubstitution paper: restrucuring ist kein festgelegter Begriff?
+
+
+Restructuring:
+
+Rewriting:
+- Use precompiled cuts to  replace other cuts inside the graph
+- used with restructuring in the resyn2 script
+
+
+
+ read lib -Standarzellen
+ 
+ parsing von werten im lib format
+ 
+ quantencomputing und james webb teleskop
+ 
+ genlib
+ lib powerwerte
+
+Set Up :
+-Clion!!
+-fiction!!
+-ABC!!
+-Repos from CDA Organization
+-maybe zsh shell
+
+ToDo:
+
+-Relevante Paper aus Cryo Paper nachlesen
+-fiction in CLion einrichten
+
+-ortho Code updaten
+
+-ABC Befehle ausprobieren
+-ABC Code anschauen
+-lib/readlib Dateien anschauen
+
+-Kabel schauen
+
+dch = rewriting
+if = technology mapping
+mfs = SAT substitution
+mfs -r = uses don't cares to optimize the node
+strash = structural hashing
+
+files to look at:
+- design_rule_violations
+
