@@ -1,0 +1,4 @@
+Morning:
+- Antrag Promotionsliste
+Rest of the day:
+- Include ordering_network to fiction (see workflows)

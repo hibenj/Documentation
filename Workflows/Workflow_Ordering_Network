@@ -1,3 +1,45 @@
 Files to work through for ordering:
-1. topo_view_input sort: now called input_ordering_network
 
+Important functions/files to rework:
+	- input_sort:
+		- isFo_inv_flag should be part of the coloring
+		- in .cpp file test all the foreach and reverse foreach_node/foreach_gate
+		- in .cpp file write meaningful tests
+	- coloring:
+		- reverse_view not necessary
+	- algorithm:
+		- clean up
+		
+	- rules for ordering:
+		1. Pi connected to FO connected to
+			1. 2 PIs
+			2. 1 PI
+		2. PI connected to node connected to PI
+		3. Rest of the nodes
+			
+	- rules for coloring:
+		1. All 1-fanin nodes (inverters and Fanouts) after PIs have to be colored east
+		2. Pi connected to Fanout node: one east coloring and one south coloring
+			- Case: 2-inverters -> get balanced to the beginning of the fanout node (isFo_inv_flag has to be respected here for instance)
+			- Case: one inverter (color inverter east and both outgoing edges south)
+				- PI connected to both inverted and non-inverted node (color inverter east and both outgoing edges south)
+				- PI connected to non-inverted node
+				- PI connected to inverted node
+			- Case: no inverter
+				- 2 PIs connected -> color one east and one south
+				- 1 PI connected -> color PI south and other node east
+				
+		3. Case PI connected to node connected to PI: color east
+	
+	- rules for algorithm:
+		- make it easier
+	
+	Fragen:
+	- Soll das coloring im view schon getrackt werden: vektor mit color_east und color_south? oder zumindest die connecting_nodes
+	- Oder im ordering werden NUR die PIs geordnet, alles andere folgt im conditional_coloring
+	
+
+Utils to introduce:		
+	- need one function ignore_inverters, which jumps over inverters to the next node
+	- Introduce a skip_node function (skip to fanout, it needs to have exactly one fanout, skip to fanin, it neeeds to have exactly one input)
+	- Introduce a coloring function, wchih paints the incoming edges of a given node
