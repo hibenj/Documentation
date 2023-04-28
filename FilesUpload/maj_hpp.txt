@@ -277,9 +277,7 @@ aspect_ratio<Lyt> determine_layout_size_majority(const coloring_container<Ntk>& 
                 {
                     if ((ctn.color_ntk.is_maj(fos[0]) && ctn.color_ntk.is_maj(fos[1])) ||
                         (ctn.color_ntk.is_maj(fos[0]) && ctn.color_ntk.color(fos[1]) == ctn.color_east) ||
-                        (ctn.color_ntk.is_maj(fos[1]) && ctn.color_ntk.color(fos[0]) == ctn.color_east) ||
-                        (ctn.color_ntk.is_maj(fos[0]) && ctn.color_ntk.is_po(fos[0])) ||
-                        (ctn.color_ntk.is_maj(fos[1]) && ctn.color_ntk.is_po(fos[1]) == ctn.color_east))
+                        (ctn.color_ntk.is_maj(fos[1]) && ctn.color_ntk.color(fos[0]) == ctn.color_east))
                     {
                         ++color_null_wired_south;
                     }
@@ -307,7 +305,6 @@ aspect_ratio<Lyt> determine_layout_size_majority(const coloring_container<Ntk>& 
                         if (m > 0)
                         {
                             x = x + m * 4 + 1;
-                            y = y + 1;
                         }
                     }
                     x = x + 5;
