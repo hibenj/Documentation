@@ -40,6 +40,9 @@ namespace fiction
  */
 namespace detail
 {
+/**
+ * Specific functions for the placement of majority gates
+ */
 template <typename Lyt>
 mockturtle::signal<Lyt> wire_west(Lyt& lyt, const tile<Lyt>& src, const tile<Lyt>& dest)
 {
@@ -132,7 +135,6 @@ mockturtle::signal<Lyt> buffer_south(Lyt& layout, const tile<Lyt>& src, unsigned
 
     return static_cast<mockturtle::signal<Lyt>>(pre2_t);
 }
-
 template <typename Lyt>
 mockturtle::signal<Lyt> buffer_east(Lyt& layout, const tile<Lyt>& src, unsigned char pre_clock)
 {
@@ -143,7 +145,7 @@ mockturtle::signal<Lyt> buffer_east(Lyt& layout, const tile<Lyt>& src, unsigned 
     pre1_t = static_cast<tile<Lyt>>(wire_east(layout, pre1_t, {pre1_t.x + 2, pre1_t.y}));
     layout.assign_clock_number({pre1_t.x, pre1_t.y, 0}, pre_clock + 1);
     pre_clock = layout.get_clock_number({pre1_t});
-
+    // workaround for the case that the y-coordinate is 0
     if (pre1_t.y == 1)
     {
         pre1_t = static_cast<tile<Lyt>>(wire_north(layout, pre1_t, {pre1_t.x, pre1_t.y - 1}));
@@ -187,7 +189,6 @@ mockturtle::signal<Lyt> buffer_east(Lyt& layout, const tile<Lyt>& src, unsigned 
 
     return static_cast<mockturtle::signal<Lyt>>(pre1_t);
 }
-
 // provides the connect_and_place function for majority gates (having three predecessors)
 template <typename Lyt, typename Ntk>
 mockturtle::signal<Lyt> connect_and_place(Lyt& lyt, const tile<Lyt>& t, const Ntk& ntk, const mockturtle::node<Ntk>& n,
@@ -209,8 +210,7 @@ mockturtle::signal<Lyt> connect_and_place(Lyt& lyt, const tile<Lyt>& t, const Nt
 
     return place(lyt, t, ntk, n, wire_south(lyt, pre1_t, t), wire_east(lyt, pre2_t, t), wire_west(lyt, pre3_t, t));
 }
-
-// check edges, which have to be buffered according to the delays resulting from majority gates
+// check edges for buffering according to the delays resulting from majority gates
 template <typename Ntk>
 std::vector<int> majority_buffer(const Ntk& ntk, mockturtle::node<Ntk> n) noexcept
 {
@@ -221,7 +221,6 @@ std::vector<int> majority_buffer(const Ntk& ntk, mockturtle::node<Ntk> n) noexce
 
     if (size != 0)
     {
-
         foreach_incoming_edge(ntk, n,
                               [&delays, &ntk, &iterator](const auto& e)
                               {
@@ -277,16 +276,14 @@ aspect_ratio<Lyt> determine_layout_size_majority(const coloring_container<Ntk>& 
                 const auto fos = fanouts(ctn.color_ntk, n);
                 if (ctn.color_ntk.is_fanout(n) && fos.size() > 1)
                 {
-                    if ((ctn.color_ntk.is_maj(fos[0]) && ctn.color_ntk.is_maj(fos[1])) ||
-                        (ctn.color_ntk.is_maj(fos[0]) && ctn.color_ntk.color(fos[1]) == ctn.color_east) ||
-                        (ctn.color_ntk.is_maj(fos[1]) && ctn.color_ntk.color(fos[0]) == ctn.color_east))
+                    // for majority gates colored null
+                    if ((ctn.color_ntk.is_maj(fos[0]) && ctn.color_ntk.color(fos[0]) == ctn.color_null &&
+                         ctn.color_ntk.color(fos[1]) == ctn.color_east) ||
+                        (ctn.color_ntk.is_maj(fos[1]) && ctn.color_ntk.color(fos[1]) == ctn.color_null &&
+                         ctn.color_ntk.color(fos[0]) == ctn.color_east))
                     {
                         ++color_null_wired_south;
                     }
-                }
-                else if (ctn.color_ntk.is_fanout(n) && ctn.color_ntk.is_po(n) && ctn.color_ntk.is_maj(fos[0]))
-                {
-                    ++color_null_wired_south;
                 }
                 if (ctn.color_ntk.is_pi(n))
                 {
@@ -308,6 +305,10 @@ aspect_ratio<Lyt> determine_layout_size_majority(const coloring_container<Ntk>& 
                         {
                             x = x + m * 4 + 1;
                         }
+                    }
+                    if (const auto maj_clr = ctn.color_ntk.color(n); maj_clr == ctn.color_south)
+                    {
+                        y = y + 3;
                     }
                     x = x + 5;
                     y = y + 5;
@@ -340,10 +341,18 @@ aspect_ratio<Lyt> determine_layout_size_majority(const coloring_container<Ntk>& 
                 }
                 else if (clr == ctn.color_null)
                 {
+                    const auto maj_buf = majority_buffer(ctn.color_ntk, n);
+                    for (auto& m : maj_buf)
+                    {
+                        if (m > 0)
+                        {
+                            y = y + m * 4 + 1;
+                            x = x + 3;
+                        }
+                    }
                     ++x;
                     ++y;
                 }
-
                 if (ctn.color_ntk.is_po(n))
                 {
                     if (is_eastern_po_orientation_available(ctn, n))
@@ -362,76 +371,28 @@ aspect_ratio<Lyt> determine_layout_size_majority(const coloring_container<Ntk>& 
             bar(i);
 #endif
         });
-    // for every incoming wire south +1 in y direction
     y = y + color_null_wired_south;
 
     return {x, y, 1};
 }
-
-template <typename Ntk>
-coloring_container<Ntk> east_south_edge_coloring_majority(const Ntk& ntk) noexcept
-{
-    coloring_container<Ntk> ctn{ntk};
-    mockturtle::topo_view   rtv{ntk};
-
-#if (PROGRESS_BARS)
-    // initialize a progress bar
-    mockturtle::progress_bar bar{static_cast<uint32_t>(ctn.color_ntk.num_gates()),
-                                 "[i] determining relative positions: |{0}|"};
-#endif
-
-    rtv.foreach_gate_reverse(
-        [&](const auto& n, [[maybe_unused]] const auto i)
-        {
-            const auto finc = fanin_edges(ctn.color_ntk, n);
-
-            // if any incoming edge is colored east, color them all east, and south otherwise
-            const auto color =
-                std::any_of(finc.fanin_edges.cbegin(), finc.fanin_edges.cend(),
-                            [&ctn](const auto& fe) { return ctn.color_ntk.edge_color(fe) == ctn.color_east; }) ?
-                    ctn.color_east :
-                    ctn.color_south;
-
-            std::for_each(finc.fanin_edges.cbegin(), finc.fanin_edges.cend(),
-                          [&ctn, &color](const auto& fe) { recursively_paint_edges(ctn, fe, color); });
-
-            // if all incoming edges are colored east, paint the node east as well
-            if (std::all_of(finc.fanin_edges.cbegin(), finc.fanin_edges.cend(),
-                            [&ctn](const auto& fe) { return ctn.color_ntk.edge_color(fe) == ctn.color_east; }))
-            {
-                ctn.color_ntk.paint(mockturtle::node<Ntk>{n}, ctn.color_east);
-            }
-            // else, if all incoming edges are colored south, paint the node south as well
-            else if (std::all_of(finc.fanin_edges.cbegin(), finc.fanin_edges.cend(),
-                                 [&ctn](const auto& fe) { return ctn.color_ntk.edge_color(fe) == ctn.color_south; }))
-            {
-                ctn.color_ntk.paint(mockturtle::node<Ntk>{n}, ctn.color_south);
-            }
-
-#if (PROGRESS_BARS)
-            // update progress
-            bar(i);
-#endif
-        });
-
-    /*rtv.foreach_gate_reverse(
-        [&](const auto& n, [[maybe_unused]] const auto i)
-        {
-            if (ntk.is_maj(n))
-            {
-                paint_node_and_edges(ctn, n, ctn.color_null);
-            }
-        });*/
-
-    return ctn;
-}
-
+// route the predecessors of majority gates
 template <typename Ntk, typename Lyt>
-int check_fos_color(Lyt layout, const coloring_container<Ntk>& ctn,
+int check_maj_color(Lyt layout, const coloring_container<Ntk>& ctn,
                     mockturtle::node_map<mockturtle::signal<Lyt>, decltype(ctn.color_ntk)>& node2pos,
                     tile<Lyt>& latest_pos, const mockturtle::node<Ntk> n, const mockturtle::node<Ntk> pre,
-                    tile<Lyt>& pre_t, std::vector<mockturtle::node<Ntk>>& recolored_fos)
+                    tile<Lyt>& pre_t)
 {
+    if (ctn.color_ntk.color(n) == ctn.color_east)
+    {
+        pre_t = static_cast<tile<Lyt>>(wire_east(layout, pre_t, {latest_pos.x + 1, pre_t.y}));
+        return 0;
+    }
+    if (ctn.color_ntk.color(n) == ctn.color_south)
+    {
+        pre_t = static_cast<tile<Lyt>>(wire_south(layout, pre_t, {pre_t.x, latest_pos.y + 1}));
+        ++latest_pos.y;
+        return 1;
+    }
     pre_t = static_cast<tile<Lyt>>(node2pos[pre]);
     if (ctn.color_ntk.is_po(pre))
     {
@@ -459,31 +420,11 @@ int check_fos_color(Lyt layout, const coloring_container<Ntk>& ctn,
         if (conflicting_colors_one == ctn.color_south)
         {
             pre_t = static_cast<tile<Lyt>>(wire_east(layout, pre_t, {latest_pos.x + 1, pre_t.y}));
-            //++latest_pos.x;
             return 0;
         }
-        /*if (conflicting_colors_one == ctn.color_null && ctn.color_ntk.is_maj(pre))
-        {
-            pre_t = static_cast<tile<Lyt>>(wire_east(layout, pre_t, {latest_pos.x + 1, pre_t.y}));
-            //++latest_pos.x;
-            return 0;
-        }*/
-        if (std::find(recolored_fos.cbegin(), recolored_fos.cend(), pre) == recolored_fos.cend())
-        {
-            pre_t = static_cast<tile<Lyt>>(wire_east(layout, pre_t, {latest_pos.x + 1, pre_t.y}));
-            //++latest_pos.x;
-            recolored_fos.push_back(pre);
-            return 0;
-        }
-        pre_t = static_cast<tile<Lyt>>(wire_south(layout, pre_t, {pre_t.x, latest_pos.y + 1}));
-        ++latest_pos.y;
-        return 1;
+        assert(false);
     }
-    pre_t = static_cast<tile<Lyt>>(wire_east(layout, pre_t, {latest_pos.x + 1, pre_t.y}));
-    //++latest_pos.x;
-    return 0;
 }
-
 void compare_and_swap(fiction::offset::ucoord_t& pre1_t, fiction::offset::ucoord_t& pre2_t,
                       fiction::offset::ucoord_t& pre3_t, std::vector<int>& maj_buf)
 {
@@ -543,9 +484,9 @@ void place_and_route_majority_buffer_east(Lyt layout, const std::vector<int>& ma
                     pre2_t = static_cast<tile<Lyt>>(buffer_east(layout, pre2_t, pre_clock));
                 }
 
-                t = {pre1_t.x, pre2_t.y};
+                pre1_t = static_cast<tile<Lyt>>(wire_east(layout, pre1_t, {pre2_t.x + 2, pre1_t.y}));
 
-                pre1_t = static_cast<tile<Lyt>>(wire_east(layout, pre1_t, {t.x + 1, pre1_t.y}));
+                t = {pre1_t.x, pre2_t.y};
 
                 latest_pos.y = t.y + 2;
                 latest_pos.x = t.x + 1;
@@ -565,7 +506,6 @@ void place_and_route_majority_buffer_south(Lyt layout, const std::vector<int>& m
         {
             if (path_n == 0)
             {
-                // buffers need to be placed "null"
                 pre1_t = static_cast<tile<Lyt>>(wire_south(layout, pre1_t, {pre1_t.x, latest_pos.y}));
                 pre2_t = static_cast<tile<Lyt>>(wire_south(layout, pre2_t, {pre2_t.x, pre1_t.y + 2}));
                 pre2_t = static_cast<tile<Lyt>>(wire_east(layout, pre2_t, {latest_pos.x + 1, pre2_t.y}));
@@ -577,9 +517,9 @@ void place_and_route_majority_buffer_south(Lyt layout, const std::vector<int>& m
                     pre1_t = static_cast<tile<Lyt>>(buffer_south(layout, pre1_t, pre_clock));
                 }
 
-                t = {pre1_t.x, pre2_t.y};
+                pre2_t = static_cast<tile<Lyt>>(wire_south(layout, pre2_t, {pre2_t.x, pre1_t.y + 2}));
 
-                pre2_t = static_cast<tile<Lyt>>(wire_south(layout, pre2_t, {pre2_t.x, t.y + 1}));
+                t = {pre1_t.x, pre2_t.y};
 
                 latest_pos.y = t.y + 1;
                 latest_pos.x = t.x + 2;
@@ -604,7 +544,7 @@ void place_and_route_majority_buffer_south(Lyt layout, const std::vector<int>& m
         }
     }
 }
-
+// actual placement and routing of the majority gates including buffers
 template <typename Ntk, typename Lyt>
 void place_and_route_majority_gate(Lyt layout, const coloring_container<Ntk>& ctn,
                                    mockturtle::node_map<mockturtle::signal<Lyt>, decltype(ctn.color_ntk)>& node2pos,
@@ -613,6 +553,7 @@ void place_and_route_majority_gate(Lyt layout, const coloring_container<Ntk>& ct
                                    fiction::offset::ucoord_t& pre2_t, fiction::offset::ucoord_t& pre3_t,
                                    const std::vector<int>& maj_buf)
 {
+    // buffers
     for (auto path_n = maj_buf.size(); path_n != 0; --path_n)
     {
         if (maj_buf[path_n - 1] >= 1)
@@ -682,21 +623,16 @@ void place_and_route_majority_gate(Lyt layout, const coloring_container<Ntk>& ct
         }
     }
 
+    // route majority gates to new columns and rows
     pre1_t = static_cast<tile<Lyt>>(wire_east(layout, pre1_t, {ref_point.x + 4, pre1_t.y}));
     pre2_t = static_cast<tile<Lyt>>(wire_east(layout, pre2_t, {ref_point.x + 3, pre2_t.y}));
     pre3_t = static_cast<tile<Lyt>>(wire_east(layout, pre3_t, {ref_point.x + 1, pre3_t.y}));
 
-    // coordinates of the majority gate
-    // ref_point.y = ref_point.y + south_edge_sum;
-    t = {ref_point.x + 2, ref_point.y + 2};
-
-    // wire south
     pre1_t = static_cast<tile<Lyt>>(wire_south(layout, pre1_t, {pre1_t.x, ref_point.y + 3}));
     pre2_t = static_cast<tile<Lyt>>(wire_south(layout, pre2_t, {pre2_t.x, ref_point.y + 1}));
     pre3_t = static_cast<tile<Lyt>>(wire_south(layout, pre3_t, {pre3_t.x, ref_point.y + 4}));
 
     // Delay Network
-    // T2
     auto pre_clock = layout.get_clock_number({pre2_t});
     pre2_t         = static_cast<tile<Lyt>>(wire_west(layout, pre2_t, {pre2_t.x - 2, pre2_t.y}));
     layout.assign_clock_number({pre2_t.x, pre2_t.y, 0}, pre_clock + 1);
@@ -706,18 +642,20 @@ void place_and_route_majority_gate(Lyt layout, const coloring_container<Ntk>& ct
     pre_clock = layout.get_clock_number({pre2_t});
     pre2_t    = static_cast<tile<Lyt>>(wire_east(layout, pre2_t, {pre2_t.x + 2, pre2_t.y}));
     layout.assign_clock_number({pre2_t.x, pre2_t.y, 0}, pre_clock + 1);
-    // end
-    // T3
     pre3_t    = static_cast<tile<Lyt>>(wire_east(layout, pre3_t, {pre3_t.x + 2, pre3_t.y}));
     pre_clock = layout.get_clock_number({pre3_t});
     pre3_t    = static_cast<tile<Lyt>>(wire_north(layout, pre3_t, {pre3_t.x, pre3_t.y - 2}));
     layout.assign_clock_number({pre3_t.x, pre3_t.y, 0}, pre_clock + 1);
     pre_clock = layout.get_clock_number({pre3_t});
-    // end
 
+    // coordinates of the majority gate
+    t = {ref_point.x + 2, ref_point.y + 2};
+
+    // placement of the majority gate
     node2pos[n] = connect_and_place(layout, t, ctn.color_ntk, n, pre2_t, pre3_t, pre1_t);
     layout.assign_clock_number({t.x, t.y, 0}, pre_clock + 1);
 
+    // route majority gate to fit into the 2DDWave scheme
     pre_clock = layout.get_clock_number({t});
     t         = static_cast<tile<Lyt>>(wire_south(layout, t, {t.x, t.y + 3}));
     layout.assign_clock_number({t.x, t.y - 1, 0}, pre_clock + 1);
@@ -728,6 +666,7 @@ void place_and_route_majority_gate(Lyt layout, const coloring_container<Ntk>& ct
     t = static_cast<tile<Lyt>>(wire_north(layout, t, {t.x, t.y - 2}));
     t = static_cast<tile<Lyt>>(wire_east(layout, t, {t.x + 2, t.y}));
 
+    // adjust the position to the output-wire of the distribution network
     node2pos[n] = static_cast<mockturtle::signal<Lyt>>(t);
 
     latest_pos.x = t.x + 1;
@@ -750,23 +689,18 @@ class orthogonal_majority_network_impl
         // measure run time
         mockturtle::stopwatch stop{pst.time_total};
         // compute a coloring
-        const auto ctn = east_south_edge_coloring_majority(ntk);
+        const auto ctn = east_south_edge_coloring(ntk);
 
         mockturtle::node_map<mockturtle::signal<Lyt>, decltype(ctn.color_ntk)> node2pos{ctn.color_ntk};
 
         // instantiate the layout
-        // auto layout_aspect_ratio = determine_layout_size_majority<Lyt>(ctn);
-        Lyt  layout{determine_layout_size_majority<Lyt>(ctn), twoddwave_clocking<Lyt>(ps.number_of_clock_phases)};
-        //Lyt layout{{20, 30, 1}, twoddwave_clocking<Lyt>(ps.number_of_clock_phases)};
+        Lyt layout{determine_layout_size_majority<Lyt>(ctn), twoddwave_clocking<Lyt>(ps.number_of_clock_phases)};
 
         // reserve PI nodes without positions
         auto pi2node = reserve_input_nodes(layout, ctn.color_ntk);
 
         // first x-pos to use for gates is 1 because PIs take up the 0th column
         tile<Lyt> latest_pos{1, 0};
-
-        // majority gates are not just colored null
-        std::vector<mockturtle::node<Ntk>> recolored_fos;
 
 #if (PROGRESS_BARS)
         // initialize a progress bar
@@ -805,7 +739,6 @@ class orthogonal_majority_network_impl
                     else if (const auto fc_m = fanins(ctn.color_ntk, n);
                              ctn.color_ntk.is_maj(n) && fc_m.fanin_nodes.size() > 2)
                     {
-                        // const auto fc = fanins(ctn.color_ntk, n);
                         auto pre1 = fc_m.fanin_nodes[0], pre2 = fc_m.fanin_nodes[1], pre3 = fc_m.fanin_nodes[2];
 
                         auto pre1_t = static_cast<tile<Lyt>>(node2pos[pre1]),
@@ -813,20 +746,19 @@ class orthogonal_majority_network_impl
                              pre3_t = static_cast<tile<Lyt>>(node2pos[pre3]);
 
                         tile<Lyt> t{}, t1{}, t2{}, t3{};
-                        // look for delayed edges
+
+                        // look for delayed incoming edges
                         auto maj_buf = majority_buffer(ctn.color_ntk, n);
 
                         // pre1_t northern tile, pre2_t middle tile, pre3_t southern tile
                         compare_and_swap(pre1_t, pre2_t, pre3_t, maj_buf);
 
-                        // since majority gates are all colored null due to their properties, predecessor nodes,
-                        // which are fan-outs need to be taken into account for the routing
+                        // check the color of the majority gate
+                        check_maj_color(layout, ctn, node2pos, latest_pos, n, pre3, pre3_t);
+                        check_maj_color(layout, ctn, node2pos, latest_pos, n, pre2, pre2_t);
+                        check_maj_color(layout, ctn, node2pos, latest_pos, n, pre1, pre1_t);
 
-                        check_fos_color(layout, ctn, node2pos, latest_pos, n, pre3, pre3_t, recolored_fos);
-                        check_fos_color(layout, ctn, node2pos, latest_pos, n, pre2, pre2_t, recolored_fos);
-                        check_fos_color(layout, ctn, node2pos, latest_pos, n, pre1, pre1_t, recolored_fos);
-
-                        // adjust ref_point for the placement of the majority gate
+                        // reference point for the placement of the majority gate
                         auto ref_point = latest_pos;
 
                         // pre1_t northern tile, pre2_t middle tile, pre3_t southern tile
@@ -872,6 +804,7 @@ class orthogonal_majority_network_impl
 
                         tile<Lyt> t{};
 
+                        // look for delayed incoming edges
                         auto maj_buf = majority_buffer(ctn.color_ntk, n);
 
                         // n is colored east
@@ -892,7 +825,8 @@ class orthogonal_majority_network_impl
 
                             ++latest_pos.x;
 
-                            //place_and_route_majority_buffer_east(layout, maj_buf, pre1_t, pre2_t, t, latest_pos);
+                            // place a buffer for every delayed incoming edge
+                            place_and_route_majority_buffer_east(layout, maj_buf, pre1_t, pre2_t, t, latest_pos);
                         }
                         // n is colored south
                         else if (clr == ctn.color_south)
@@ -912,7 +846,8 @@ class orthogonal_majority_network_impl
 
                             ++latest_pos.y;
 
-                            //place_and_route_majority_buffer_south(layout, maj_buf, pre1_t, pre2_t, t, latest_pos);
+                            // place a buffer for every delayed incoming edge
+                            place_and_route_majority_buffer_south(layout, maj_buf, pre1_t, pre2_t, t, latest_pos);
                         }
                         // n is colored null; corner case
                         else
@@ -932,6 +867,9 @@ class orthogonal_majority_network_impl
 
                             ++latest_pos.x;
                             ++latest_pos.y;
+
+                            // place a buffer for every delayed incoming edge
+                            place_and_route_majority_buffer_south(layout, maj_buf, pre1_t, pre2_t, t, latest_pos);
                         }
 
                         node2pos[n] = connect_and_place(layout, t, ctn.color_ntk, n, pre1_t, pre2_t, fc.constant_fanin);
